@@ -69,7 +69,8 @@ func VerifierForKeyRef(ctx context.Context, keyRef string, hashAlgorithm crypto.
 	if err != nil {
 		return nil, fmt.Errorf("pem to public key: %w", err)
 	}
-
+	fmt.Println("pubKey: ", pubKey)
+	fmt.Println("hashAlgorithm: ", hashAlgorithm)
 	return signature.LoadVerifier(pubKey, hashAlgorithm)
 }
 
@@ -174,6 +175,7 @@ func PublicKeyFromKeyRef(ctx context.Context, keyRef string) (signature.Verifier
 }
 
 func PublicKeyFromKeyRefWithHashAlgo(ctx context.Context, keyRef string, hashAlgorithm crypto.Hash) (signature.Verifier, error) {
+	fmt.Println("Entered PublicKeyFromKeyRefWithHashAlgoooooooooo")
 	if strings.HasPrefix(keyRef, kubernetes.KeyReference) {
 		s, err := kubernetes.GetKeyPairSecret(ctx, keyRef)
 		if err != nil {

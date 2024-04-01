@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net/url"
 	"os"
@@ -56,6 +57,7 @@ func (rf *realConnector) OIDConnect(url, clientID, secret, redirectURL string) (
 }
 
 func getCertForOauthID(sv signature.SignerVerifier, fc api.LegacyClient, connector oidcConnector, oidcIssuer, oidcClientID, oidcClientSecret, oidcRedirectURL string) (*api.CertificateResponse, error) {
+	fmt.Println("Entering getCertForOauthID")
 	tok, err := connector.OIDConnect(oidcIssuer, oidcClientID, oidcClientSecret, oidcRedirectURL)
 	if err != nil {
 		return nil, err
@@ -82,11 +84,65 @@ func getCertForOauthID(sv signature.SignerVerifier, fc api.LegacyClient, connect
 		SignedEmailAddress: proof,
 	}
 
+	// fmt.Println("Sending request to Fulcio")
+	// certResp, _ := fc.SigningCert(cr, tok.RawString)
+
+	// certPemBlock, _ := pem.Decode(certResp.CertPEM)
+	// cert, _ := x509.ParseCertificate(certPemBlock.Bytes)
+	// pubKeyDER, _ := x509.MarshalPKIXPublicKey(cert.PublicKey)
+	// pubKeyPEM := &pem.Block{
+	// 	Type:  "PUBLIC KEY",
+	// 	Bytes: pubKeyDER,
+	// }
+	// pubKeyPEMBytes := pem.EncodeToMemory(pubKeyPEM)
+	// fmt.Println("Public Key from fulcio Certificate:")
+	// fmt.Println(string(pubKeyPEMBytes))
+
+	// certBytes := pem.EncodeToMemory(certPemBlock)
+	// fmt.Println("cert from fulcio:", string(certBytes))
+
+	// // Parse the chain (assuming it's an array of certificates)
+	// chain, err := parseCertificateChain(certResp.ChainPEM)
+	// if err != nil {
+	// 	fmt.Println("Error parsing certificate chain:", err)
+	// 	return nil, err
+	// }
+
+	// // Convert the chain to strings
+	// var chainStr []string
+	// for _, cert := range chain {
+	// 	chainStr = append(chainStr, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})))
+
+	// }
+
+	// fmt.Println("chain from fulcio:", chainStr)
+
 	return fc.SigningCert(cr, tok.RawString)
+}
+
+func parseCertificateChain(pemBytes []byte) ([]*x509.Certificate, error) {
+	var chain []*x509.Certificate
+	for len(pemBytes) > 0 {
+		var certBlock *pem.Block
+		certBlock, pemBytes = pem.Decode(pemBytes)
+		if certBlock == nil {
+			break
+		}
+
+		cert, err := x509.ParseCertificate(certBlock.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse certificate in chain: %w", err)
+		}
+
+		chain = append(chain, cert)
+	}
+
+	return chain, nil
 }
 
 // GetCert returns the PEM-encoded signature of the OIDC identity returned as part of an interactive oauth2 flow plus the PEM-encoded cert chain.
 func GetCert(_ context.Context, sv signature.SignerVerifier, idToken, flow, oidcIssuer, oidcClientID, oidcClientSecret, oidcRedirectURL string, fClient api.LegacyClient) (*api.CertificateResponse, error) {
+	fmt.Println("Entering GetCert")
 	c := &realConnector{}
 	switch flow {
 	case flowDevice:
@@ -110,6 +166,8 @@ type Signer struct {
 }
 
 func NewSigner(ctx context.Context, ko options.KeyOpts, signer signature.SignerVerifier) (*Signer, error) {
+
+	fmt.Println("Entering NewSigner")
 	fClient, err := NewClient(ko.FulcioURL)
 	if err != nil {
 		return nil, fmt.Errorf("creating Fulcio client: %w", err)
@@ -198,6 +256,7 @@ func NewClient(fulcioURL string) (api.LegacyClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	// fmt.Println("fulcioServer:", fulcioServer)
 	fClient := api.NewClient(fulcioServer, api.WithUserAgent(options.UserAgent()))
 	return fClient, nil
 }

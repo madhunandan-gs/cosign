@@ -41,6 +41,10 @@ type SignOptions struct {
 	TSAServerURL          string
 	IssueCertificate      bool
 	SignContainerIdentity string
+	// HVCACredentials       string
+	// MtlsCert              string
+	// CertKey               string
+	// Csr                   string
 
 	Rekor       RekorOptions
 	Fulcio      FulcioOptions
@@ -130,4 +134,20 @@ func (o *SignOptions) AddFlags(cmd *cobra.Command) {
 
 	cmd.Flags().StringVar(&o.SignContainerIdentity, "sign-container-identity", "",
 		"manually set the .critical.docker-reference field for the signed identity, which is useful when image proxies are being used where the pull reference should match the signature")
+
+	// cmd.Flags().StringVar(&o.HVCACredentials, "credentials", "", "path to the credentials file")
+	// _ = cmd.Flags().SetAnnotation("credentials", cobra.BashCompFilenameExt, []string{})
+
+	// cmd.Flags().StringVar(&o.MtlsCert, "mtlscert", "",
+	// 	"path to the X.509 certificate in PEM format to include in the OCI Signature")
+	// _ = cmd.Flags().SetAnnotation("certificate", cobra.BashCompFilenameExt, []string{"cert"})
+
+	// cmd.Flags().StringVar(&o.CertKey, "certkey", "",
+	// 	"path to the private key file")
+	// _ = cmd.Flags().SetAnnotation("key", cobra.BashCompFilenameExt, []string{})
+
+	// cmd.Flags().StringVar(&o.Csr, "csr", "",
+	// 	"path to the csr")
+	// _ = cmd.Flags().SetAnnotation("key", cobra.BashCompFilenameExt, []string{})
+
 }

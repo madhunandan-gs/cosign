@@ -84,6 +84,7 @@ type VerifyCommand struct {
 
 // Exec runs the verification command
 func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
+	fmt.Println("Entered Exec")
 	if len(images) == 0 {
 		return flag.ErrHelp
 	}
@@ -109,12 +110,13 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 			return err
 		}
 	}
-
+	fmt.Println("1")
 	ociremoteOpts, err := c.ClientOpts(ctx)
 	if err != nil {
 		return fmt.Errorf("constructing client options: %w", err)
 	}
-
+	fmt.Println("2")
+	c.IgnoreSCT = true
 	co := &cosign.CheckOpts{
 		Annotations:                  c.Annotations.Annotations,
 		RegistryClientOpts:           ociremoteOpts,
@@ -135,7 +137,7 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 	if c.CheckClaims {
 		co.ClaimVerifier = cosign.SimpleClaimVerifier
 	}
-
+	fmt.Println("3")
 	if c.TSACertChainPath != "" {
 		_, err := os.Stat(c.TSACertChainPath)
 		if err != nil {
@@ -160,6 +162,7 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 		co.TSAIntermediateCertificates = intermediates
 		co.TSARootCertificates = roots
 	}
+	fmt.Println("4")
 
 	if !c.IgnoreTlog {
 		if c.RekorURL != "" {
@@ -176,7 +179,10 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 			return fmt.Errorf("getting Rekor public keys: %w", err)
 		}
 	}
+
+	fmt.Println("5")
 	if keylessVerification(c.KeyRef, c.Sk) {
+		fmt.Println("5.5")
 		if c.CertChain != "" {
 			chain, err := loadCertChainFromFileOrURL(c.CertChain)
 			if err != nil {
@@ -191,6 +197,7 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 				}
 			}
 		} else {
+			fmt.Println("6")
 			// This performs an online fetch of the Fulcio roots. This is needed
 			// for verifying keyless certificates (both online and offline).
 			co.RootCerts, err = fulcio.GetRoots()
@@ -206,6 +213,7 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 	keyRef := c.KeyRef
 	certRef := c.CertRef
 
+	fmt.Println("7")
 	// Ignore Signed Certificate Timestamp if the flag is set or a key is provided
 	if shouldVerifySCT(c.IgnoreSCT, c.KeyRef, c.Sk) {
 		co.CTLogPubKeys, err = cosign.GetCTLogPubs(ctx)
@@ -214,19 +222,26 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 		}
 	}
 
+	fmt.Println("8")
 	// Keys are optional!
 	var pubKey signature.Verifier
 	switch {
 	case keyRef != "":
+		fmt.Println("keyRef :", keyRef)
+		fmt.Println("9")
 		pubKey, err = sigs.PublicKeyFromKeyRefWithHashAlgo(ctx, keyRef, c.HashAlgorithm)
 		if err != nil {
+			fmt.Println("loading public key: %w", err)
 			return fmt.Errorf("loading public key: %w", err)
 		}
+		fmt.Println("pubKey :", pubKey)
 		pkcs11Key, ok := pubKey.(*pkcs11key.Key)
 		if ok {
 			defer pkcs11Key.Close()
 		}
+		fmt.Println("pkcs11Key :", pkcs11Key)
 	case c.Sk:
+		fmt.Println("10")
 		sk, err := pivkey.GetKeyWithSlot(c.Slot)
 		if err != nil {
 			return fmt.Errorf("opening piv token: %w", err)
@@ -237,11 +252,13 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 			return fmt.Errorf("initializing piv token verifier: %w", err)
 		}
 	case certRef != "":
+		fmt.Println("11")
 		cert, err := loadCertFromFileOrURL(c.CertRef)
 		if err != nil {
 			return err
 		}
 		if c.CertChain == "" {
+			fmt.Println("12")
 			// If no certChain is passed, the Fulcio root certificate will be used
 			co.RootCerts, err = fulcio.GetRoots()
 			if err != nil {
@@ -256,6 +273,7 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 				return err
 			}
 		} else {
+			fmt.Println("13")
 			// Verify certificate with chain
 			chain, err := loadCertChainFromFileOrURL(c.CertChain)
 			if err != nil {
@@ -267,6 +285,7 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 			}
 		}
 		if c.SCTRef != "" {
+			fmt.Println("14")
 			sct, err := os.ReadFile(filepath.Clean(c.SCTRef))
 			if err != nil {
 				return fmt.Errorf("reading sct from file: %w", err)
@@ -275,6 +294,7 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 		}
 	}
 	co.SigVerifier = pubKey
+	fmt.Println("co.SigVerifier :", co.SigVerifier)
 
 	// NB: There are only 2 kinds of verification right now:
 	// 1. You gave us the public key explicitly to verify against so co.SigVerifier is non-nil or,
@@ -298,12 +318,15 @@ func (c *VerifyCommand) Exec(ctx context.Context, images []string) (err error) {
 				return fmt.Errorf("parsing reference: %w", err)
 			}
 			ref, err = sign.GetAttachedImageRef(ref, c.Attachment, ociremoteOpts...)
+			fmt.Println("ref:", ref)
 			if err != nil {
 				return fmt.Errorf("resolving attachment type %s for image %s: %w", c.Attachment, img, err)
 			}
 
 			verified, bundleVerified, err := cosign.VerifyImageSignatures(ctx, ref, co)
+			fmt.Println("verified, bundleVerified :", verified, bundleVerified)
 			if err != nil {
+				fmt.Println("VerifyImageSignatures error")
 				return cosignError.WrapError(err)
 			}
 

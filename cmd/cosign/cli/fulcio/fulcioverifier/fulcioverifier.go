@@ -34,6 +34,7 @@ func NewSigner(ctx context.Context, ko options.KeyOpts, signer signature.SignerV
 
 	// Grab the PublicKeys for the CTFE, either from tuf or env.
 	pubKeys, err := cosign.GetCTLogPubs(ctx)
+	fmt.Println("CT log pub Keys :", pubKeys)
 	if err != nil {
 		return nil, fmt.Errorf("getting CTFE public keys: %w", err)
 	}

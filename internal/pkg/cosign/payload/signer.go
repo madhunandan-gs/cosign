@@ -39,25 +39,33 @@ var _ cosign.Signer = (*payloadSigner)(nil)
 
 // Sign implements `Signer`
 func (ps *payloadSigner) Sign(ctx context.Context, payload io.Reader) (oci.Signature, crypto.PublicKey, error) {
+	fmt.Println("Entered Sign function in signer.go")
 	payloadBytes, err := io.ReadAll(payload)
 	if err != nil {
+		fmt.Println("Error reading payload : ", err)
 		return nil, nil, err
 	}
+	fmt.Println("1")
 	sig, err := ps.signPayload(ctx, payloadBytes)
 	if err != nil {
+		fmt.Println("error signing payload: ", err)
 		return nil, nil, err
 	}
+	fmt.Println("2")
 	pk, err := ps.publicKey(ctx)
 	if err != nil {
+		fmt.Println("error getting publickey: ", err)
 		return nil, nil, err
 	}
 
+	fmt.Println("3")
 	b64sig := base64.StdEncoding.EncodeToString(sig)
 	ociSig, err := static.NewSignature(payloadBytes, b64sig)
 	if err != nil {
+		fmt.Println("error creating oci signature: ", err)
 		return nil, nil, err
 	}
-
+	fmt.Println("4")
 	return ociSig, pk, nil
 }
 
@@ -109,6 +117,7 @@ func newSigner(s signature.Signer,
 // Option types other than `signature.SignOption` and `signature.PublicKeyOption` cause a runtime panic.
 func NewSigner(s signature.Signer,
 	signAndPublicKeyOptions ...interface{}) cosign.Signer {
+	fmt.Println("Entered ipayload.NewSigner")
 	signer := newSigner(s, signAndPublicKeyOptions...)
 	return &signer
 }

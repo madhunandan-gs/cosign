@@ -25,6 +25,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	vault "github.com/hashicorp/vault/api"
 
 	"github.com/sigstore/cosign/v2/cmd/cosign/cli/fulcio"
 	"github.com/sigstore/cosign/v2/cmd/cosign/cli/fulcio/fulcioverifier"
@@ -64,6 +66,7 @@ import (
 )
 
 func ShouldUploadToTlog(ctx context.Context, ko options.KeyOpts, ref name.Reference, tlogUpload bool) (bool, error) {
+	fmt.Println("Entered shouldUploadToTlog 1 ")
 	upload := shouldUploadToTlog(ctx, ko, ref, tlogUpload)
 	var statementErr error
 	if upload {
@@ -81,6 +84,7 @@ func ShouldUploadToTlog(ctx context.Context, ko options.KeyOpts, ref name.Refere
 }
 
 func shouldUploadToTlog(ctx context.Context, ko options.KeyOpts, ref name.Reference, tlogUpload bool) bool {
+	fmt.Println("Entered shouldUploadToTlog 2 ")
 	// return false if not uploading to the tlog has been requested
 	if !tlogUpload {
 		return false
@@ -97,6 +101,7 @@ func shouldUploadToTlog(ctx context.Context, ko options.KeyOpts, ref name.Refere
 
 	// Check if the image is public (no auth in Get)
 	if _, err := remote.Get(ref, remote.WithContext(ctx)); err != nil {
+		fmt.Println("Entered remote.Get in shoulduploadtotlog")
 		ui.Warnf(ctx, "%q appears to be a private repository, please confirm uploading to the transparency log at %q", ref.Context().String(), ko.RekorURL)
 		if ui.ConfirmContinue(ctx) != nil {
 			ui.Infof(ctx, "not uploading to transparency log")
@@ -186,9 +191,11 @@ func SignCmd(ro *options.RootOptions, ko options.KeyOpts, signOpts options.SignO
 			} else if err != nil {
 				return fmt.Errorf("accessing image: %w", err)
 			}
+
+			fmt.Println("digest :", digest)
 			err = signDigest(ctx, digest, staticPayload, ko, signOpts, annotations, dd, sv, se)
 			if err != nil {
-				return fmt.Errorf("signing digest: %w", err)
+				return fmt.Errorf("error signing digest: %w", err)
 			}
 			continue
 		}
@@ -207,7 +214,7 @@ func SignCmd(ro *options.RootOptions, ko options.KeyOpts, signOpts options.SignO
 			digest := ref.Context().Digest(d.String())
 			err = signDigest(ctx, digest, staticPayload, ko, signOpts, annotations, dd, sv, se)
 			if err != nil {
-				return fmt.Errorf("signing digest: %w", err)
+				return fmt.Errorf("signing digest in walk: %w", err)
 			}
 			return ErrDone
 		}); err != nil {
@@ -223,6 +230,7 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 	dd mutate.DupeDetector, sv *SignerVerifier, se oci.SignedEntity) error {
 	var err error
 	// The payload can be passed to skip generation.
+	fmt.Println("Entered signDigest")
 	if len(payload) == 0 {
 		payload, err = (&sigPayload.Cosign{
 			Image:           digest,
@@ -233,12 +241,12 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 			return fmt.Errorf("payload: %w", err)
 		}
 	}
-
 	var s icos.Signer
 	s = ipayload.NewSigner(sv)
 	if sv.Cert != nil {
 		s = ifulcio.NewSigner(s, sv.Cert, sv.Chain)
 	}
+	fmt.Println("2")
 
 	if ko.TSAServerURL != "" {
 		if ko.TSAClientCACert == "" && ko.TSAClientCert == "" { // no mTLS params or custom CA
@@ -252,10 +260,16 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 			))
 		}
 	}
+	fmt.Println("3")
+	// signOpts.TlogUpload = false
+	fmt.Println("signOpts.TlogUpload :", signOpts.TlogUpload)
 	shouldUpload, err := ShouldUploadToTlog(ctx, ko, digest, signOpts.TlogUpload)
 	if err != nil {
 		return fmt.Errorf("should upload to tlog: %w", err)
 	}
+
+	fmt.Println("shouldUpload :", shouldUpload)
+	fmt.Println("4")
 	if shouldUpload {
 		rClient, err := rekor.NewClient(ko.RekorURL)
 		if err != nil {
@@ -263,19 +277,21 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 		}
 		s = irekor.NewSigner(s, rClient)
 	}
-
+	fmt.Println("5")
 	ociSig, _, err := s.Sign(ctx, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
 
 	b64sig, err := ociSig.Base64Signature()
+	fmt.Println("5.5")
 	if err != nil {
 		return err
 	}
-
+	fmt.Println("6")
 	outputSignature := signOpts.OutputSignature
 	if outputSignature != "" {
+		fmt.Println("6.1")
 		// Add digest to suffix to differentiate each image during recursive signing
 		if signOpts.Recursive {
 			outputSignature = fmt.Sprintf("%s-%s", outputSignature, strings.Replace(digest.DigestStr(), ":", "-", 1))
@@ -284,8 +300,11 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 			return fmt.Errorf("create signature file: %w", err)
 		}
 	}
+
+	fmt.Println("7")
 	outputPayload := signOpts.OutputPayload
 	if outputPayload != "" {
+		fmt.Println("7.1")
 		// Add digest to suffix to differentiate each image during recursive signing
 		if signOpts.Recursive {
 			outputPayload = fmt.Sprintf("%s-%s", outputPayload, strings.Replace(digest.DigestStr(), ":", "-", 1))
@@ -294,8 +313,10 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 			return fmt.Errorf("create payload file: %w", err)
 		}
 	}
+	fmt.Println("8")
 
 	if signOpts.OutputCertificate != "" {
+		fmt.Println("8.1")
 		rekorBytes, err := sv.Bytes(ctx)
 		if err != nil {
 			return fmt.Errorf("create certificate file: %w", err)
@@ -308,7 +329,9 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 		ui.Infof(ctx, "Certificate wrote in the file %s", signOpts.OutputCertificate)
 	}
 
+	fmt.Println("9")
 	if ko.BundlePath != "" {
+		fmt.Println("9.1")
 		signedPayload, err := fetchLocalSignedPayload(ociSig)
 		if err != nil {
 			return fmt.Errorf("failed to fetch signed payload: %w", err)
@@ -327,13 +350,15 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 	if !signOpts.Upload {
 		return nil
 	}
-
+	fmt.Println("10")
 	// Attach the signature to the entity.
 	newSE, err := mutate.AttachSignatureToEntity(se, ociSig, mutate.WithDupeDetector(dd))
+	fmt.Println("10.1")
 	if err != nil {
 		return err
 	}
 
+	fmt.Println("11")
 	// Publish the signatures associated with this entity
 	walkOpts, err := signOpts.Registry.ClientOpts(ctx)
 	if err != nil {
@@ -342,6 +367,7 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 
 	// Check if we are overriding the signatures repository location
 	repo, _ := ociremote.GetEnvTargetRepository()
+	fmt.Println("11.1")
 	if repo.RepositoryStr() == "" {
 		ui.Infof(ctx, "Pushing signature to: %s", digest.Repository)
 	} else {
@@ -352,7 +378,7 @@ func signDigest(ctx context.Context, digest name.Digest, payload []byte, ko opti
 	if signOpts.RegistryExperimental.RegistryReferrersMode == options.RegistryReferrersModeOCI11 {
 		return ociremote.WriteSignaturesExperimentalOCI(digest, newSE, walkOpts...)
 	}
-
+	fmt.Println("12")
 	// Publish the signatures associated with this entity
 	return ociremote.WriteSignatures(digest.Repository, newSE, walkOpts...)
 }
@@ -522,10 +548,30 @@ func signerFromKeyRef(ctx context.Context, certPath, certChainPath, keyRef strin
 }
 
 func signerFromNewKey() (*SignerVerifier, error) {
+	fmt.Println("Entered signerFromNewKey to generate Privatekey")
 	privKey, err := cosign.GeneratePrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("generating cert: %w", err)
 	}
+
+	// // print the public key
+	// pubKeyDER1, _ := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
+	// pubKeyPEM1 := &pem.Block{
+	// 	Type:  "PUBLIC KEY",
+	// 	Bytes: pubKeyDER1,
+	// }
+	// pubKeyPEMBytes1 := pem.EncodeToMemory(pubKeyPEM1)
+	// fmt.Println("new fulcio public key :", string(pubKeyPEMBytes1))
+
+	// // print the private key
+	// privBytes, _ := x509.MarshalECPrivateKey(privKey)
+	// privPem := pem.Block{
+	// 	Type:  "EC PRIVATE KEY",
+	// 	Bytes: privBytes,
+	// }
+
+	// fmt.Println("New fulcio PrivateKey : ", pem.Encode(os.Stdout, &privPem))
+
 	sv, err := signature.LoadECDSASignerVerifier(privKey, crypto.SHA256)
 	if err != nil {
 		return nil, err
@@ -536,7 +582,64 @@ func signerFromNewKey() (*SignerVerifier, error) {
 	}, nil
 }
 
+func signerKeyFromVault() (*SignerVerifier, error) {
+	// using the code signing privatekey from vault
+
+	config := vault.DefaultConfig()
+
+	config.Address = "http://127.0.0.1:8200"
+
+	client, err := vault.NewClient(config)
+	if err != nil {
+		log.Fatalf("unable to initialize Vault client: %v", err)
+	}
+	var token = "root"
+	client.SetToken(token)
+
+	//fetching privatekey from vault
+
+	prKey, err := client.KVv2("secret").Get(context.Background(), "key")
+	if err != nil {
+		log.Fatalf("unable to read key: %v", err)
+	}
+
+	keyValue, ok := prKey.Data["key"].(string)
+	if !ok {
+		log.Fatalf("value type assertion failed: %T %#v", prKey.Data["key"], prKey.Data["key"])
+	}
+	fmt.Println("keyValue from vault:", keyValue)
+
+	// Convert the string representation to a PEM block
+	keyBlock, _ := pem.Decode([]byte(keyValue))
+	if keyBlock == nil {
+		log.Fatalf("failed to decode PEM block from certValue")
+	}
+
+	var sv signature.SignerVerifier
+
+	if privKeyCodeSigning, err := x509.ParseECPrivateKey(keyBlock.Bytes); err == nil {
+		// Use EC private key
+		sv, err = signature.LoadECDSASignerVerifier(privKeyCodeSigning, crypto.SHA256)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse code signing private key: %w", err)
+		}
+	} else if privKeyCodeSigning, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes); err == nil {
+		// Use RSA private key
+		sv, err = signature.LoadRSAPSSSignerVerifier(privKeyCodeSigning, crypto.SHA256, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse code signing private key: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("failed to parse code signing private key: %w", err)
+	}
+
+	return &SignerVerifier{
+		SignerVerifier: sv,
+	}, nil
+}
+
 func keylessSigner(ctx context.Context, ko options.KeyOpts, sv *SignerVerifier) (*SignerVerifier, error) {
+	fmt.Println("Entered keylessSigner")
 	var (
 		k   *fulcio.Signer
 		err error
@@ -560,6 +663,7 @@ func keylessSigner(ctx context.Context, ko options.KeyOpts, sv *SignerVerifier) 
 }
 
 func SignerFromKeyOpts(ctx context.Context, certPath string, certChainPath string, ko options.KeyOpts) (*SignerVerifier, error) {
+	fmt.Println("Entered SignerFromKeyOpts")
 	var sv *SignerVerifier
 	var err error
 	genKey := false
@@ -569,9 +673,28 @@ func SignerFromKeyOpts(ctx context.Context, certPath string, certChainPath strin
 	case ko.KeyRef != "":
 		sv, err = signerFromKeyRef(ctx, certPath, certChainPath, ko.KeyRef, ko.PassFunc)
 	default:
-		genKey = true
-		ui.Infof(ctx, "Generating ephemeral keys...")
-		sv, err = signerFromNewKey()
+		genKey = false
+
+		if genKey {
+			ui.Infof(ctx, "Generating ephemeral keys...")
+			sv, err = signerFromNewKey()
+			if err != nil {
+				fmt.Println("Error in signerFromNewKey", err)
+				return nil, err
+			}
+		} else {
+			sv, err = signerKeyFromVault()
+			if err != nil {
+				fmt.Println("Error in signerFromNewKey", err)
+				return nil, err
+			}
+			// Fetching certificate from vault
+			sv, err = Vault(sv)
+			if err != nil {
+				fmt.Println("Error in Vault", err)
+				return nil, err
+			}
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -637,4 +760,120 @@ func fetchLocalSignedPayload(sig oci.Signature) (*cosign.LocalSignedPayload, err
 		return nil, err
 	}
 	return signedPayload, nil
+}
+
+func Vault(sv *SignerVerifier) (*SignerVerifier, error) {
+
+	type CertificateResponse struct {
+		CertPEM  []byte
+		ChainPEM []byte
+		SCT      []byte
+	}
+
+	config := vault.DefaultConfig()
+
+	config.Address = "http://127.0.0.1:8200"
+
+	client, err := vault.NewClient(config)
+	if err != nil {
+		log.Fatalf("unable to initialize Vault client: %v", err)
+	}
+
+	// var token string
+	// fmt.Print("Enter Vault root token: ")
+	// fmt.Scan(&token)
+
+	var token = "root"
+	client.SetToken(token)
+
+	//fetching code signing cert
+
+	cert, err := client.KVv2("secret").Get(context.Background(), "cert")
+	if err != nil {
+		log.Fatalf("unable to read secret: %v", err)
+	}
+
+	certValue, ok := cert.Data["cert"].(string)
+	if !ok {
+		log.Fatalf("value type assertion failed: %T %#v", cert.Data["cert"], cert.Data["cert"])
+	}
+
+	// Convert the string representation to a PEM block
+	certBlock, _ := pem.Decode([]byte(certValue))
+	if certBlock == nil {
+		log.Fatalf("failed to decode PEM block from certValue")
+	}
+
+	// Encode the PEM block back to bytes
+	certPEM := pem.EncodeToMemory(certBlock)
+
+	if certValue == "" {
+		fmt.Println("cert from vault is empty")
+	}
+	// fmt.Println("cert :", certValue)
+
+	//fetching test cert
+
+	// testcert, err := client.KVv2("secret").Get(context.Background(), "testcert")
+	// if err != nil {
+	// 	log.Fatalf("unable to read secret: %v", err)
+	// }
+
+	// testCertValue, ok := testcert.Data["testcert"].(string)
+	// if !ok {
+	// 	log.Fatalf("value type assertion failed: %T %#v", cert.Data["testcert"], cert.Data["testcert"])
+	// }
+	// fmt.Println("testcert :", testCertValue)
+
+	// key, err := client.KVv2("secret").Get(context.Background(), "key")
+	// if err != nil {
+	// 	log.Fatalf("unable to read secret: %v", err)
+	// }
+
+	// keyValue, ok := key.Data["key"].(string)
+	// if !ok {
+	// 	log.Fatalf("value type assertion failed: %T %#v", key.Data["key"], key.Data["key"])
+	// }
+	// // fmt.Println("keyValue :", keyValue)
+
+	chain, err := client.KVv2("secret").Get(context.Background(), "chain")
+	if err != nil {
+		log.Fatalf("unable to read secret: %v", err)
+	}
+
+	chainValue, ok := chain.Data["chain"].(string)
+	if !ok {
+		log.Fatalf("value type assertion failed: %T %#v", cert.Data["chain"], cert.Data["chain"])
+	}
+
+	if chainValue == "" {
+		fmt.Println("chain from vault is empty")
+	}
+
+	// Convert the string representation to a PEM block
+	chainBlock, _ := pem.Decode([]byte(chainValue))
+	if chainBlock == nil {
+		log.Fatalf("failed to decode PEM block from chainValue")
+	}
+
+	// Encode the PEM block back to bytes
+	chainPEM := pem.EncodeToMemory(chainBlock)
+
+	// var modifiedResponse *api.CertificateResponse
+	modifiedResponse := &CertificateResponse{
+		CertPEM:  certPEM,
+		ChainPEM: chainPEM,
+	}
+
+	if modifiedResponse != nil {
+		fmt.Println("")
+	}
+
+	f := &SignerVerifier{
+		Cert:  modifiedResponse.CertPEM,
+		Chain: modifiedResponse.ChainPEM,
+		SignerVerifier: sv.SignerVerifier,
+	}
+
+	return f, nil
 }

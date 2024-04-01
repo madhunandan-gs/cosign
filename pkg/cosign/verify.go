@@ -201,6 +201,7 @@ func verifyOCIAttestation(ctx context.Context, verifier signature.Verifier, att 
 }
 
 func verifyOCISignature(ctx context.Context, verifier signature.Verifier, sig payloader) error {
+	fmt.Println("Entered verifyOCISignature")
 	b64sig, err := sig.Base64Signature()
 	if err != nil {
 		return err
@@ -493,6 +494,7 @@ func VerifyImageSignatures(ctx context.Context, signedImgRef name.Reference, co 
 	// This is a carefully optimized sequence for fetching the signatures of the
 	// entity that minimizes registry requests when supplied with a digest input
 	digest, err := ociremote.ResolveDigest(signedImgRef, co.RegistryClientOpts...)
+	fmt.Println("digest :", digest)
 	if err != nil {
 		if terr := (&transport.Error{}); errors.As(err, &terr) && terr.StatusCode == http.StatusNotFound {
 			return nil, false, &ErrImageTagNotFound{
@@ -523,6 +525,7 @@ func VerifyImageSignatures(ctx context.Context, signedImgRef name.Reference, co 
 			return nil, false, err
 		}
 	}
+	fmt.Println("sigs, h :", sigs, h)
 
 	return verifySignatures(ctx, sigs, h, co)
 }
@@ -531,6 +534,7 @@ func VerifyImageSignatures(ctx context.Context, signedImgRef name.Reference, co 
 // If there were no valid signatures, we return an error.
 func VerifyLocalImageSignatures(ctx context.Context, path string, co *CheckOpts) (checkedSignatures []oci.Signature, bundleVerified bool, err error) {
 	// Enforce this up front.
+	fmt.Println("Entered VerifyLocalImageSignatures")
 	if co.RootCerts == nil && co.SigVerifier == nil {
 		return nil, false, errors.New("one of verifier or root certs is required")
 	}
@@ -581,7 +585,18 @@ func verifySignatures(ctx context.Context, sigs oci.Signatures, h v1.Hash, co *C
 	if err != nil {
 		return nil, false, err
 	}
+	fmt.Println("sl:", sl)
 
+	// if len(sl) > 0 {
+	// 	// Get the latest signature
+	// 	latestSignature := sl[len(sl)-1]
+
+	// 	// assign the latest signature back to sl
+	// 	sl = []oci.Signature{latestSignature}
+	// } else {
+	// 	fmt.Println("Signature list is empty.")
+	// }
+	// fmt.Println("sl:", sl)
 	if len(sl) == 0 {
 		return nil, false, &ErrNoMatchingSignatures{
 			errors.New("no matching signatures"),
@@ -654,19 +669,23 @@ func verifySignatures(ctx context.Context, sigs oci.Signatures, h v1.Hash, co *C
 func verifyInternal(ctx context.Context, sig oci.Signature, h v1.Hash,
 	verifyFn signatureVerificationFn, co *CheckOpts) (
 	bundleVerified bool, err error) {
+	fmt.Println("Entered verifyinternal")
 	var acceptableRFC3161Time, acceptableRekorBundleTime *time.Time // Timestamps for the signature we accept, or nil if not applicable.
 
 	acceptableRFC3161Timestamp, err := VerifyRFC3161Timestamp(sig, co)
 	if err != nil {
 		return false, fmt.Errorf("unable to verify RFC3161 timestamp bundle: %w", err)
 	}
+	// fmt.Println("acceptableRFC3161Timestamp :", acceptableRFC3161Timestamp) This is always nil
 	if acceptableRFC3161Timestamp != nil {
 		acceptableRFC3161Time = &acceptableRFC3161Timestamp.Time
 	}
+	fmt.Println("co.IgnoreTlog : ", co.IgnoreTlog)
 
 	if !co.IgnoreTlog {
 		bundleVerified, err = VerifyBundle(sig, co)
 		if err != nil {
+			fmt.Println("error verifying bundle: %w", err)
 			return false, fmt.Errorf("error verifying bundle: %w", err)
 		}
 
@@ -677,6 +696,7 @@ func verifyInternal(ctx context.Context, sig oci.Signature, h v1.Hash,
 				return false, fmt.Errorf("error getting bundle integrated time: %w", err)
 			}
 			acceptableRekorBundleTime = &t
+			fmt.Println("acceptableRekorBundleTime :", acceptableRekorBundleTime)
 		} else {
 			// If the --offline flag was specified, fail here. bundleVerified returns false with
 			// no error when there was no bundle provided.
@@ -696,6 +716,7 @@ func verifyInternal(ctx context.Context, sig oci.Signature, h v1.Hash,
 
 			e, err := tlogValidateEntry(ctx, co.RekorClient, co.RekorPubKeys, sig, pemBytes)
 			if err != nil {
+				fmt.Println("tlogValidateEntry : error validating entry: %w", err)
 				return false, err
 			}
 			t := time.Unix(*e.IntegratedTime, 0)
@@ -705,6 +726,7 @@ func verifyInternal(ctx context.Context, sig oci.Signature, h v1.Hash,
 
 	verifier := co.SigVerifier
 	if verifier == nil {
+		fmt.Println("verifier is nil")
 		// If we don't have a public key to check against, we can try a root cert.
 		cert, err := sig.Cert()
 		if err != nil {
@@ -741,6 +763,7 @@ func verifyInternal(ctx context.Context, sig oci.Signature, h v1.Hash,
 
 	// 1. Perform cryptographic verification of the signature using the certificate's public key.
 	if err := verifyFn(ctx, verifier, sig); err != nil {
+		fmt.Println("verifyFn : error verifying signature: %w", err)
 		return false, err
 	}
 
@@ -757,6 +780,7 @@ func verifyInternal(ctx context.Context, sig oci.Signature, h v1.Hash,
 		return false, err
 	}
 	if cert != nil {
+		fmt.Println("cert is not nil")
 		// use the provided Rekor bundle or RFC3161 timestamp to check certificate expiration
 		expirationChecked := false
 
@@ -800,7 +824,9 @@ func keyBytes(sig oci.Signature, co *CheckOpts) ([]byte, error) {
 	// We have a public key.
 	if co.SigVerifier != nil {
 		pub, err := co.SigVerifier.PublicKey(co.PKOpts...)
+		fmt.Println("We have a public key")
 		if err != nil {
+			fmt.Println("We done have a public key")
 			return nil, err
 		}
 		return cryptoutils.MarshalPublicKeyToPEM(pub)
@@ -816,6 +842,9 @@ func VerifyBlobSignature(ctx context.Context, sig oci.Signature, co *CheckOpts) 
 
 // VerifyImageSignature verifies a signature
 func VerifyImageSignature(ctx context.Context, sig oci.Signature, h v1.Hash, co *CheckOpts) (bundleVerified bool, err error) {
+	fmt.Println("Entered VerifyImageSignature")
+	// co.IgnoreSCT = true
+	// co.IgnoreTlog = true
 	return verifyInternal(ctx, sig, h, verifyOCISignature, co)
 }
 
@@ -1200,6 +1229,8 @@ func comparePublicKey(bundleBody string, sig oci.Signature, co *CheckOpts) error
 	if len(rest) > 0 {
 		return fmt.Errorf("unexpected PEM block: %s", rest)
 	}
+	fmt.Println("Compare************** ",string(pemBytes))
+	fmt.Println("Compare************** ",string(decodeSecond))
 
 	if !bytes.Equal(pemFirst.Bytes, pemSecond.Bytes) {
 		return fmt.Errorf("comparing public key PEMs, expected %s, got %s",
@@ -1276,20 +1307,25 @@ func bundleKey(bundleBody string) (string, error) {
 
 	switch entry := ei.(type) {
 	case *dsse_v001.V001Entry:
+		fmt.Println("Case 1")
 		if len(entry.DSSEObj.Signatures) > 1 {
 			return "", errors.New("multiple signatures on DSSE envelopes are not currently supported")
 		}
 		return entry.DSSEObj.Signatures[0].Verifier.String(), nil
 	case *hashedrekord_v001.V001Entry:
+		fmt.Println("Case 2")
 		return entry.HashedRekordObj.Signature.PublicKey.Content.String(), nil
 	case *intoto_v001.V001Entry:
+		fmt.Println("Case 3")
 		return entry.IntotoObj.PublicKey.String(), nil
 	case *intoto_v002.V002Entry:
+		fmt.Println("Case 4")
 		if len(entry.IntotoObj.Content.Envelope.Signatures) > 1 {
 			return "", errors.New("multiple signatures on DSSE envelopes are not currently supported")
 		}
 		return entry.IntotoObj.Content.Envelope.Signatures[0].PublicKey.String(), nil
 	case *rekord_v001.V001Entry:
+		fmt.Println("Case 5")
 		return entry.RekordObj.Signature.PublicKey.Content.String(), nil
 	default:
 		return "", errors.New("unsupported type")

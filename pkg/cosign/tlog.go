@@ -171,6 +171,7 @@ func rekorPubsFromClient(rekorClient *client.Rekor) (*TrustedTransparencyLogPubK
 
 // TLogUpload will upload the signature, public key and payload to the transparency log.
 func TLogUpload(ctx context.Context, rekorClient *client.Rekor, signature []byte, sha256CheckSum hash.Hash, pemBytes []byte) (*models.LogEntryAnon, error) {
+	fmt.Println("Entered TLogUpload function")
 	re := rekorEntry(sha256CheckSum, signature, pemBytes)
 	returnVal := models.Hashedrekord{
 		APIVersion: swag.String(re.APIVersion()),
@@ -200,9 +201,13 @@ func TLogUploadInTotoAttestation(ctx context.Context, rekorClient *client.Rekor,
 }
 
 func doUpload(ctx context.Context, rekorClient *client.Rekor, pe models.ProposedEntry) (*models.LogEntryAnon, error) {
+	fmt.Println("Entered doUpload function")
 	params := entries.NewCreateLogEntryParamsWithContext(ctx)
 	params.SetProposedEntry(pe)
+	// fmt.Println("params: ", params)
 	resp, err := rekorClient.Entries.CreateLogEntry(params)
+	fmt.Println("rekor enrty resp :", resp)
+	fmt.Println("rekor entry error :", err)
 	if err != nil {
 		// If the entry already exists, we get a specific error.
 		// Here, we display the proof and succeed.

@@ -37,8 +37,10 @@ import (
 type tlogUploadFn func(*client.Rekor, []byte) (*models.LogEntryAnon, error)
 
 func uploadToTlog(rekorBytes []byte, rClient *client.Rekor, upload tlogUploadFn) (*cbundle.RekorBundle, error) {
+	fmt.Println("Entered uploadToTlog function")
 	entry, err := upload(rClient, rekorBytes)
 	if err != nil {
+		fmt.Println("Error while uploading to tlog : ", err)
 		return nil, err
 	}
 	fmt.Fprintln(os.Stderr, "tlog entry created with index:", *entry.LogIndex)
@@ -56,10 +58,15 @@ var _ cosign.Signer = (*signerWrapper)(nil)
 
 // Sign implements `cosign.Signer`
 func (rs *signerWrapper) Sign(ctx context.Context, payload io.Reader) (oci.Signature, crypto.PublicKey, error) {
+	fmt.Println("Entered signerWrapper - Sign function")
 	sig, pub, err := rs.inner.Sign(ctx, payload)
 	if err != nil {
+		fmt.Println("Error in inner signer : ", err)
 		return nil, nil, err
 	}
+
+	pubkey, _ := cryptoutils.MarshalPublicKeyToPEM(pub)
+	fmt.Println("Public Key after signing: ", string(pubkey))
 
 	payloadBytes, err := sig.Payload()
 	if err != nil {
@@ -79,10 +86,12 @@ func (rs *signerWrapper) Sign(ctx context.Context, payload io.Reader) (oci.Signa
 	if err != nil {
 		return nil, nil, err
 	}
+	// cert = nil
 
 	var rekorBytes []byte
 	if cert != nil {
 		rekorBytes, err = cryptoutils.MarshalCertificateToPEM(cert)
+		fmt.Println("string of rekorbytes is the certificate :", string(rekorBytes))
 	} else {
 		rekorBytes, err = cryptoutils.MarshalPublicKeyToPEM(pub)
 	}
@@ -93,6 +102,7 @@ func (rs *signerWrapper) Sign(ctx context.Context, payload io.Reader) (oci.Signa
 	bundle, err := uploadToTlog(rekorBytes, rs.rClient, func(r *client.Rekor, b []byte) (*models.LogEntryAnon, error) {
 		checkSum := sha256.New()
 		if _, err := checkSum.Write(payloadBytes); err != nil {
+			fmt.Println("Error while writing checksum : ", err)
 			return nil, err
 		}
 		return cosignv1.TLogUpload(ctx, r, sigBytes, checkSum, b)
@@ -100,6 +110,8 @@ func (rs *signerWrapper) Sign(ctx context.Context, payload io.Reader) (oci.Signa
 	if err != nil {
 		return nil, nil, err
 	}
+
+	fmt.Println("Are we here yet?")
 
 	newSig, err := mutate.Signature(sig, mutate.WithBundle(bundle))
 	if err != nil {

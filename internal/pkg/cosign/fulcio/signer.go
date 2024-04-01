@@ -17,6 +17,7 @@ package fulcio
 import (
 	"context"
 	"crypto"
+	"fmt"
 	"io"
 
 	"github.com/sigstore/cosign/v2/internal/pkg/cosign"
@@ -52,6 +53,7 @@ func (fs *signerWrapper) Sign(ctx context.Context, payload io.Reader) (oci.Signa
 
 // NewSigner returns a `cosign.Signer` which leverages Fulcio to create a Cert and Chain for the signature
 func NewSigner(inner cosign.Signer, cert, chain []byte) cosign.Signer {
+	fmt.Println("Entered ifulcio.Newsigner function")
 	return &signerWrapper{
 		inner: inner,
 		cert:  cert,

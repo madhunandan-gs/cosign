@@ -91,11 +91,13 @@ func VerifySCT(_ context.Context, certPEM, chainPEM, rawSCT []byte, pubKeys *Tru
 
 	// fetch embedded SCT if present
 	embeddedSCTs, err := x509util.ParseSCTsFromCertificate(certPEM)
+	fmt.Println("embeddedSCTs :", embeddedSCTs)
 	if err != nil {
 		return err
 	}
 	// SCT must be either embedded or in header
 	if len(embeddedSCTs) == 0 && len(rawSCT) == 0 {
+		fmt.Println("no SCT found")
 		return errors.New("no SCT found")
 	}
 

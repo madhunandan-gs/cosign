@@ -63,6 +63,7 @@ func (ks ephemeralSigner) Sign(_ context.Context, payload io.Reader) (oci.Signat
 
 // NewSigner generates a new private signing key and returns a `cosign.Signer` which creates signatures with it.
 func NewSigner() (icosign.Signer, error) {
+	fmt.Println("Entered NewSigner that generates a private key")
 	priv, err := cosign.GeneratePrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("generating cert: %w", err)
